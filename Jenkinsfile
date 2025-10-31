@@ -268,7 +268,6 @@ pipeline {
             echo "Deployment failed" | tee -a "$LOG_DIR/deploy.err" || true
             exit 1
           }
-          trap on_error EXIT
 
           kill_port() {
             port="$1"
@@ -437,13 +436,18 @@ PY
             return 1
           }
 
-          kill_port "$APP_PORT"
-
+          # Attempt to determine start command
           CMD="$(detect_start_cmd || true)"
+
           if [ -z "$CMD" ]; then
-            echo "Could not auto-detect a start command for this repository." | tee -a "$LOG_DIR/deploy.err" || true
-            exit 1
+            echo "No detectable start command. Skipping deployment." | tee -a "$LOG_DIR/deploy.log" || true
+            exit 0
           fi
+
+          # Only set trap when we actually deploy
+          trap on_error EXIT
+
+          kill_port "$APP_PORT"
 
           echo "Selected start command: $CMD" | tee -a "$LOG_DIR/deploy.log" || true
           start_with_nohup "$CMD"
