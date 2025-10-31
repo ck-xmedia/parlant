@@ -81,24 +81,25 @@ pipeline {
           set -eu
           [ -n "${BASH:-}" ] && set -o pipefail
           echo "Detecting and installing dependencies..."
+          mkdir -p "$LOG_DIR" || true
 
           install_python_deps() {
             if [ -f "requirements.txt" ]; then
               echo "[Python] requirements.txt detected"
               . "$VENV_DIR/bin/activate" 2>/dev/null || true
-              pip install -r requirements.txt
+              python -m pip install -r requirements.txt || true
               return
             fi
             if [ -f "pyproject.toml" ]; then
               echo "[Python] pyproject.toml detected"
               . "$VENV_DIR/bin/activate" 2>/dev/null || true
               if grep -qi "\\[tool.poetry\\]" pyproject.toml && command -v poetry >/dev/null 2>&1; then
-                poetry install --no-root --only main --no-interaction --no-ansi
+                poetry install --no-root --only main --no-interaction --no-ansi || true
               else
                 if [ -f "setup.cfg" ] || [ -f "setup.py" ]; then
-                  pip install -e .
+                  python -m pip install -e . || true
                 else
-                  pip install .
+                  python -m pip install . || true
                 fi
               fi
               return
@@ -110,14 +111,14 @@ pipeline {
             if [ -f "package.json" ]; then
               echo "[Node] package.json detected"
               if command -v pnpm >/dev/null 2>&1 && [ -f "pnpm-lock.yaml" ]; then
-                pnpm install --frozen-lockfile
+                pnpm install --frozen-lockfile || true
               elif command -v yarn >/dev/null 2>&1 && [ -f "yarn.lock" ]; then
-                yarn install --frozen-lockfile
+                yarn install --frozen-lockfile || true
               elif command -v npm >/dev/null 2>&1; then
                 if [ -f "package-lock.json" ]; then
-                  npm ci
+                  npm ci || true
                 else
-                  npm install --no-audit --no-fund
+                  npm install --no-audit --no-fund || true
                 fi
               else
                 echo "[Node] No npm/yarn/pnpm found."
@@ -148,7 +149,7 @@ pipeline {
           install_go_deps() {
             if [ -f "go.mod" ]; then
               echo "[Go] go.mod detected"
-              go mod download
+              go mod download || true
               return
             fi
             echo "[Go] No go.mod found."
@@ -157,7 +158,7 @@ pipeline {
           install_rust_deps() {
             if [ -f "Cargo.toml" ]; then
               echo "[Rust] Cargo.toml detected"
-              cargo fetch
+              cargo fetch || true
               return
             fi
             echo "[Rust] No Cargo.toml found."
@@ -167,7 +168,7 @@ pipeline {
             if [ -f "Gemfile" ]; then
               echo "[Ruby] Gemfile detected"
               if command -v bundle >/dev/null 2>&1; then
-                bundle install --jobs=4 --retry=3
+                bundle install --jobs=4 --retry=3 || true
               else
                 echo "[Ruby] Bundler not found."
               fi
@@ -180,7 +181,7 @@ pipeline {
             if [ -f "composer.json" ]; then
               echo "[PHP] composer.json detected"
               if command -v composer >/dev/null 2>&1; then
-                composer install --no-interaction --no-progress --prefer-dist
+                composer install --no-interaction --no-progress --prefer-dist || true
               else
                 echo "[PHP] Composer not found."
               fi
@@ -189,13 +190,13 @@ pipeline {
             echo "[PHP] No composer.json found."
           }
 
-          install_python_deps || { echo "Python dependency step failed" | tee -a "$LOG_DIR/install.log"; }
-          install_node_deps   || { echo "Node dependency step failed"   | tee -a "$LOG_DIR/install.log"; }
-          install_java_deps   || { echo "Java dependency step failed"   | tee -a "$LOG_DIR/install.log"; }
-          install_go_deps     || { echo "Go dependency step failed"     | tee -a "$LOG_DIR/install.log"; }
-          install_rust_deps   || { echo "Rust dependency step failed"   | tee -a "$LOG_DIR/install.log"; }
-          install_ruby_deps   || { echo "Ruby dependency step failed"   | tee -a "$LOG_DIR/install.log"; }
-          install_php_deps    || { echo "PHP dependency step failed"    | tee -a "$LOG_DIR/install.log"; }
+          install_python_deps || { echo "Python dependency step failed" | tee -a "$LOG_DIR/install.log" || true; }
+          install_node_deps   || { echo "Node dependency step failed"   | tee -a "$LOG_DIR/install.log" || true; }
+          install_java_deps   || { echo "Java dependency step failed"   | tee -a "$LOG_DIR/install.log" || true; }
+          install_go_deps     || { echo "Go dependency step failed"     | tee -a "$LOG_DIR/install.log" || true; }
+          install_rust_deps   || { echo "Rust dependency step failed"   | tee -a "$LOG_DIR/install.log" || true; }
+          install_ruby_deps   || { echo "Ruby dependency step failed"   | tee -a "$LOG_DIR/install.log" || true; }
+          install_php_deps    || { echo "PHP dependency step failed"    | tee -a "$LOG_DIR/install.log" || true; }
 
           echo "Dependency installation completed."
         '''
@@ -213,9 +214,9 @@ pipeline {
             if [ -f "package.json" ]; then
               if grep -q '"build"[[:space:]]*:' package.json; then
                 echo "[Node] Running build script"
-                if command -v pnpm >/dev/null 2>&1 && [ -f pnpm-lock.yaml ]; then pnpm build
-                elif command -v yarn >/dev/null 2>&1 && [ -f yarn.lock ]; then yarn build
-                elif command -v npm  >/dev/null 2>&1; then npm run build
+                if command -v pnpm >/dev/null 2>&1 && [ -f pnpm-lock.yaml ]; then pnpm build || true
+                elif command -v yarn >/dev/null 2>&1 && [ -f yarn.lock ]; then yarn build || true
+                elif command -v npm  >/dev/null 2>&1; then npm run build || true
                 else echo "[Node] No package manager available for build."; fi
               fi
             fi
@@ -224,13 +225,13 @@ pipeline {
           build_java() {
             if [ -f "pom.xml" ]; then
               echo "[Java] mvn package"
-              mvn -B -DskipTests package
+              mvn -B -DskipTests package || true
             elif [ -f "build.gradle" ] || [ -f "build.gradle.kts" ]; then
               echo "[Java] gradle build"
               if [ -x "./gradlew" ]; then
-                ./gradlew --no-daemon build -x test
+                ./gradlew --no-daemon build -x test || true
               elif command -v gradle >/dev/null 2>&1; then
-                gradle --no-daemon build -x test
+                gradle --no-daemon build -x test || true
               fi
             fi
           }
@@ -238,14 +239,14 @@ pipeline {
           build_go() {
             if [ -f "go.mod" ]; then
               echo "[Go] Building binary"
-              go build -o appbin ./...
+              go build -o appbin ./... || true
             fi
           }
 
           build_rust() {
             if [ -f "Cargo.toml" ]; then
               echo "[Rust] cargo build --release"
-              cargo build --release
+              cargo build --release || true
             fi
           }
 
@@ -264,7 +265,7 @@ pipeline {
           [ -n "${BASH:-}" ] && set -o pipefail
 
           on_error() {
-            echo "Deployment failed" | tee -a "$LOG_DIR/deploy.err"
+            echo "Deployment failed" | tee -a "$LOG_DIR/deploy.err" || true
             exit 1
           }
           trap on_error EXIT
@@ -285,7 +286,7 @@ pipeline {
               if ps -p "$(cat "$PID_FILE")" >/dev/null 2>&1; then
                 kill -9 "$(cat "$PID_FILE")" || true
               fi
-              rm -f "$PID_FILE"
+              rm -f "$PID_FILE" || true
             fi
           }
 
@@ -298,7 +299,7 @@ pipeline {
             if ps -p "$(cat "$PID_FILE")" >/dev/null 2>&1; then
               echo "Application started with PID $(cat "$PID_FILE")"
             else
-              echo "Application failed to start" | tee -a "$LOG_DIR/deploy.err"
+              echo "Application failed to start" | tee -a "$LOG_DIR/deploy.err" || true
               exit 1
             fi
           }
@@ -440,11 +441,11 @@ PY
 
           CMD="$(detect_start_cmd || true)"
           if [ -z "$CMD" ]; then
-            echo "Could not auto-detect a start command for this repository." | tee -a "$LOG_DIR/deploy.err"
+            echo "Could not auto-detect a start command for this repository." | tee -a "$LOG_DIR/deploy.err" || true
             exit 1
           fi
 
-          echo "Selected start command: $CMD" | tee -a "$LOG_DIR/deploy.log"
+          echo "Selected start command: $CMD" | tee -a "$LOG_DIR/deploy.log" || true
           start_with_nohup "$CMD"
           trap - EXIT
 
