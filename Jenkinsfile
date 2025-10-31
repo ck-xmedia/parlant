@@ -28,7 +28,8 @@ pipeline {
     stage('Environment Setup') {
       steps {
         sh '''
-          set -euo pipefail
+          set -eu
+          [ -n "${BASH:-}" ] && set -o pipefail
           echo "Setting up environment..."
           mkdir -p "$LOG_DIR" "$(dirname "$PID_FILE")"
 
@@ -77,7 +78,8 @@ pipeline {
     stage('Install Dependencies') {
       steps {
         sh '''
-          set -euo pipefail
+          set -eu
+          [ -n "${BASH:-}" ] && set -o pipefail
           echo "Detecting and installing dependencies..."
 
           install_python_deps() {
@@ -93,7 +95,6 @@ pipeline {
               if grep -qi "\\[tool.poetry\\]" pyproject.toml && command -v poetry >/dev/null 2>&1; then
                 poetry install --no-root --only main --no-interaction --no-ansi
               else
-                # Try editable install for PEP 517 projects if applicable; fallback to sdist/wheel
                 if [ -f "setup.cfg" ] || [ -f "setup.py" ]; then
                   pip install -e .
                 else
@@ -188,7 +189,6 @@ pipeline {
             echo "[PHP] No composer.json found."
           }
 
-          # Execute installers with soft-fail logging to logs/install.log
           install_python_deps || { echo "Python dependency step failed" | tee -a "$LOG_DIR/install.log"; }
           install_node_deps   || { echo "Node dependency step failed"   | tee -a "$LOG_DIR/install.log"; }
           install_java_deps   || { echo "Java dependency step failed"   | tee -a "$LOG_DIR/install.log"; }
@@ -205,7 +205,8 @@ pipeline {
     stage('Build') {
       steps {
         sh '''
-          set -euo pipefail
+          set -eu
+          [ -n "${BASH:-}" ] && set -o pipefail
           echo "Building project if applicable..."
 
           build_node() {
@@ -259,24 +260,27 @@ pipeline {
     stage('Deploy Application') {
       steps {
         sh '''
-          set -euo pipefail
+          set -eu
+          [ -n "${BASH:-}" ] && set -o pipefail
 
           on_error() {
             echo "Deployment failed" | tee -a "$LOG_DIR/deploy.err"
             exit 1
           }
-          trap on_error ERR
+          trap on_error EXIT
 
           kill_port() {
-            local port="$1"
+            port="$1"
             echo "Killing any process on port ${port}..."
             if command -v fuser >/dev/null 2>&1; then
               fuser -k "${port}/tcp" || true
             fi
             if command -v lsof >/dev/null 2>&1; then
-              lsof -ti :"$port" | xargs -r kill -9 || true
+              pids="$(lsof -ti :"$port" 2>/dev/null || true)"
+              if [ -n "$pids" ]; then
+                echo "$pids" | xargs kill -9 || true
+              fi
             fi
-            # Fallback: kill by PID file if exists
             if [ -f "$PID_FILE" ]; then
               if ps -p "$(cat "$PID_FILE")" >/dev/null 2>&1; then
                 kill -9 "$(cat "$PID_FILE")" || true
@@ -286,9 +290,9 @@ pipeline {
           }
 
           start_with_nohup() {
-            local cmd="$1"
+            cmd="$1"
             echo "Starting application: $cmd"
-            nohup bash -lc "$cmd" >> "$LOG_DIR/app.out" 2>> "$LOG_DIR/app.err" &
+            nohup sh -c "$cmd" >> "$LOG_DIR/app.out" 2>> "$LOG_DIR/app.err" &
             echo $! > "$PID_FILE"
             sleep 2
             if ps -p "$(cat "$PID_FILE")" >/dev/null 2>&1; then
@@ -442,6 +446,7 @@ PY
 
           echo "Selected start command: $CMD" | tee -a "$LOG_DIR/deploy.log"
           start_with_nohup "$CMD"
+          trap - EXIT
 
           echo "Deployment complete. Service should be reachable on port $APP_PORT."
         '''
